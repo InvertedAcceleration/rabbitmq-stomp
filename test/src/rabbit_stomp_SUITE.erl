@@ -30,7 +30,7 @@ all() ->
 
 -define(GARBAGE, <<"bdaf63dda9d78b075c748b740e7c3510ad203b07\nbdaf63dd">>).
 
-count_connections() ->
+count_connections(Config) ->
     %% The default port is 61613 but it's in the middle of the ephemeral
     %% ports range on many operating systems. Therefore, there is a
     %% chance this port is already in use. Let's use a port close to the
@@ -54,8 +54,8 @@ count_connections() ->
     end,
     IPv4Count + IPv6Count.
 
-test_direct_client_connections_are_not_leaked() ->
-    N = count_connections(),
+test_direct_client_connections_are_not_leaked(Config) ->
+    N = count_connections(Config),
     lists:foreach(fun (_) ->
                           {ok, Client = {Socket, _}} = rabbit_stomp_client:connect(),
                           %% send garbage which trips up the parser
@@ -65,21 +65,21 @@ test_direct_client_connections_are_not_leaked() ->
                   end,
                   lists:seq(1, 100)),
     timer:sleep(5000),
-    N = count_connections(),
+    N = count_connections(Config),
     ok.
 
-test_messages_not_dropped_on_disconnect() ->
-    N = count_connections(),
+test_messages_not_dropped_on_disconnect(Config) ->
+    N = count_connections(Config),
     {ok, Client} = rabbit_stomp_client:connect(),
     N1 = N + 1,
-    N1 = count_connections(),
+    N1 = count_connections(Config),
     [rabbit_stomp_client:send(
        Client, "SEND", [{"destination", ?DESTINATION}],
        [integer_to_list(Count)]) || Count <- lists:seq(1, 1000)],
     rabbit_stomp_client:disconnect(Client),
     QName = rabbit_misc:r(<<"/">>, queue, <<"bulk-test">>),
     timer:sleep(3000),
-    N = count_connections(),
+    N = count_connections(Config),
     rabbit_amqqueue:with(
       QName, fun(Q) ->
                      1000 = pget(messages, rabbit_amqqueue:info(Q, [messages]))
