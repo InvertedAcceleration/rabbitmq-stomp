@@ -15,17 +15,18 @@
 %%
 
 -module(rabbit_stomp_SUITE).
--export([all_tests/0]).
+-include_lib("common_test/include/ct.hrl").
+-compile(export_all).
 -import(rabbit_misc, [pget/2]).
-
 -include_lib("amqp_client/include/amqp_client.hrl").
 -include("rabbit_stomp_frame.hrl").
 -define(DESTINATION, "/queue/bulk-test").
 
-all_tests() ->
-    test_messages_not_dropped_on_disconnect(),
-    test_direct_client_connections_are_not_leaked(),
-    ok.
+all() ->
+    [
+     test_messages_not_dropped_on_disconnect,
+     test_direct_client_connections_are_not_leaked
+    ].
 
 -define(GARBAGE, <<"bdaf63dda9d78b075c748b740e7c3510ad203b07\nbdaf63dd">>).
 
