@@ -14,7 +14,7 @@
 %% Copyright (c) 2007-2016 Pivotal Software, Inc.  All rights reserved.
 %%
 
--module(rabbit_stomp_test).
+-module(rabbit_stomp_SUITE).
 -export([all_tests/0]).
 -import(rabbit_misc, [pget/2]).
 
