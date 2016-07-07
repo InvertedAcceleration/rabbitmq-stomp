@@ -21,6 +21,7 @@
 -include_lib("amqp_client/include/amqp_client.hrl").
 -include("rabbit_stomp_frame.hrl").
 -define(DESTINATION, "/queue/bulk-test").
+-define(GARBAGE, <<"bdaf63dda9d78b075c748b740e7c3510ad203b07\nbdaf63dd">>).
 
 all() ->
     [
@@ -28,36 +29,65 @@ all() ->
      test_direct_client_connections_are_not_leaked
     ].
 
--define(GARBAGE, <<"bdaf63dda9d78b075c748b740e7c3510ad203b07\nbdaf63dd">>).
+init_per_suite(Config) ->
+    rabbit_ct_helpers:log_environment(),
+    Config1 = rabbit_ct_helpers:merge_app_env(
+                Config,
+                {rabbitmq_stomp, [{default_user,     []},
+                                  {ssl_cert_login,   true}]}),
+    rabbit_ct_helpers:run_setup_steps(Config1,
+      rabbit_ct_broker_helpers:setup_steps() ++
+      rabbit_ct_client_helpers:setup_steps()).
+
+end_per_suite(Config) ->
+    rabbit_ct_helpers:run_teardown_steps(Config,
+      rabbit_ct_client_helpers:teardown_steps() ++
+      rabbit_ct_broker_helpers:teardown_steps()).
+
+init_per_group(_, Config) ->
+    Config.
+
+end_per_group(_, Config) ->
+    Config.
+
+init_per_testcase(Testcase, Config) ->
+    rabbit_ct_helpers:testcase_started(Config, Testcase).
+
+end_per_testcase(Testcase, Config) ->
+    rabbit_ct_helpers:testcase_finished(Config, Testcase).
 
 count_connections(Config) ->
-    %% The default port is 61613 but it's in the middle of the ephemeral
-    %% ports range on many operating systems. Therefore, there is a
-    %% chance this port is already in use. Let's use a port close to the
-    %% AMQP default port.
     IPv4Count = try
         %% Count IPv4 connections. On some platforms, the IPv6 listener
         %% implicitely listens to IPv4 connections too so the IPv4
         %% listener doesn't exist. Thus this try/catch. This is the case
         %% with Linux where net.ipv6.bindv6only is disabled (default in
         %% most cases).
-        ranch_server:count_connections({acceptor, {0,0,0,0}, 5673})
+        rabbit_ct_broker_helpers:rpc(Config, 0, ranch_server, count_connections,
+                                     [{acceptor, {0,0,0,0}, stomp_port(Config)}])
     catch
-        _:badarg -> 0
+        _:{badarg, _} -> 0
     end,
     IPv6Count = try
         %% Count IPv6 connections. We also use a try/catch block in case
         %% the host is not configured for IPv6.
-        ranch_server:count_connections({acceptor, {0,0,0,0,0,0,0,0}, 5673})
+        rabbit_ct_broker_helpers:rpc(Config, 0, ranch_server, count_connections,
+                                     [{acceptor, {0,0,0,0,0,0,0,0}, stomp_port(Config)}])
     catch
-        _:badarg -> 0
+        _:{badarg, _} -> 0
     end,
     IPv4Count + IPv6Count.
+
+stomp_port(Config) ->
+    rabbit_ct_broker_helpers:get_node_config(Config, 0, tcp_port_stomp).
+
+hostname(Config) ->
+    ?config(rmq_hostname, Config).
 
 test_direct_client_connections_are_not_leaked(Config) ->
     N = count_connections(Config),
     lists:foreach(fun (_) ->
-                          {ok, Client = {Socket, _}} = rabbit_stomp_client:connect(),
+                          {ok, Client = {Socket, _}} = rabbit_stomp_client:connect(hostname(Config), stomp_port(Config)),
                           %% send garbage which trips up the parser
                           gen_tcp:send(Socket, ?GARBAGE),
                           rabbit_stomp_client:send(
@@ -70,7 +100,7 @@ test_direct_client_connections_are_not_leaked(Config) ->
 
 test_messages_not_dropped_on_disconnect(Config) ->
     N = count_connections(Config),
-    {ok, Client} = rabbit_stomp_client:connect(),
+    {ok, Client} = rabbit_stomp_client:connect(hostname(Config), stomp_port(Config)),
     N1 = N + 1,
     N1 = count_connections(Config),
     [rabbit_stomp_client:send(
